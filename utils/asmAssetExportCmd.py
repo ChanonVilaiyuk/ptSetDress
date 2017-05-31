@@ -67,7 +67,7 @@ def main():
     logger.debug('Virtual AR scene saved %s' % result)
     
     logger.info('Exporting abc locator %s ...' % locPath)
-    sd_utils.exportAsmLocator(locPath, bake=False)
+    sd_utils.exportAsmLocator(locPath, bake=False, version=scenePath)
     logger.debug('Export abc locator finish')
 
     logger.info('Copying abc hero ...')

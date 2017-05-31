@@ -80,6 +80,7 @@ class MyForm(QtGui.QMainWindow):
         self.ui.search_lineEdit.returnPressed.connect(partial(self.selectLocs, 'search'))
         self.ui.selectSameAsset_pushButton.clicked.connect(partial(self.selectLocs, 'sameAsset'))
         self.ui.selectLocator_pushButton.clicked.connect(partial(self.selectLocs, 'root'))
+        self.ui.selectUnmatchTransform_pushButton.clicked.connect(partial(self.selectLocs, 'unmatch'))
 
         # replace 
         self.ui.setLo_pushButton.clicked.connect(partial(self.replaceReference, 'lo'))
@@ -91,6 +92,10 @@ class MyForm(QtGui.QMainWindow):
         self.ui.show_pushButton.clicked.connect(partial(self.showHide, 'show'))
         self.ui.unload_pushButton.clicked.connect(partial(self.unloadReference, False))
         self.ui.remove_pushButton.clicked.connect(partial(self.unloadReference, True))
+
+        # utils 
+        self.ui.applyAssetTransform_pushButton.clicked.connect(partial(self.applyTransform, 'asset'))
+        self.ui.applyShotTransform_pushButton.clicked.connect(partial(self.applyTransform, 'shot'))
 
     def setupUI(self) : 
         self.setLevel()
@@ -122,6 +127,9 @@ class MyForm(QtGui.QMainWindow):
         if mode == 'sameAsset' : 
             locs = self.getSameAsset()
 
+        if mode == 'unmatch': 
+            locs = self.getUnMatchTransform()
+
         if locs : 
             mc.select(locs)
 
@@ -130,6 +138,8 @@ class MyForm(QtGui.QMainWindow):
         lod = mode
         locs = self.getRoot()
         level = self.levelMap[str(self.ui.level_comboBox.currentText())]
+        if self.ui.custom_checkBox.isChecked(): 
+            level = str(self.ui.custom_lineEdit.text())
         forceReplace = self.ui.force_checkBox.isChecked()
         skipHidden = self.ui.hidden_checkBox.isChecked()
         validLocs = []
@@ -331,6 +341,26 @@ class MyForm(QtGui.QMainWindow):
 
         return targetLocs
 
+    def getUnMatchTransform(self): 
+        assetAttr = 'assetTransform'
+        shotAttr = 'shotTransform'
+        emptyLocs = []
+        locs = self.getLocator()
+        unmatch = []
+
+        for loc in locs: 
+            locAssetAttr = '%s.%s' % (loc, assetAttr)
+            locShotAttr = '%s.%s' % (loc, shotAttr)
+
+            if mc.objExists(locAssetAttr) and mc.objExists(locShotAttr): 
+                strAssetTransform = mc.getAttr(locAssetAttr)    
+                strShotTransform = mc.getAttr(locShotAttr)
+                
+                if not strAssetTransform == strShotTransform: 
+                    unmatch.append(loc)
+                    print loc
+
+        return unmatch 
 
     def getRoot(self, objs=[]) : 
         if not objs : 
@@ -360,6 +390,63 @@ class MyForm(QtGui.QMainWindow):
                     validLocs.append(loc)
 
             return validLocs
+
+    def applyTransform(self, entity): 
+        assetAttr = 'assetTransform'
+        shotAttr = 'shotTransform'
+        locs = self.getRoot()
+        failed = []
+
+        for loc in locs: 
+            locAssetAttr = '%s.%s' % (loc, assetAttr)
+            locShotAttr = '%s.%s' % (loc, shotAttr)
+            success = False
+
+            if mc.objExists(locAssetAttr) and mc.objExists(locShotAttr): 
+                strAssetTransform = mc.getAttr(locAssetAttr)    
+                strShotTransform = mc.getAttr(locShotAttr)
+                assetTransform = self.getTransform(strAssetTransform)
+                shotTransform = self.getTransform(strShotTransform)
+
+                if entity == 'asset': 
+                    if assetTransform: 
+                        mc.setAttr('%s.translate' % loc, assetTransform['translate'][0][0], assetTransform['translate'][0][1], assetTransform['translate'][0][2])
+                        mc.setAttr('%s.rotate' % loc, assetTransform['rotate'][0][0], assetTransform['rotate'][0][1], assetTransform['rotate'][0][2])
+                        mc.setAttr('%s.scale' % loc, assetTransform['scale'][0][0], assetTransform['scale'][0][1], assetTransform['scale'][0][2])
+                        success = True
+                        logger.info('move %s success' % loc)
+
+                if entity == 'shot': 
+                    if shotTransform: 
+                        mc.setAttr('%s.translate' % loc, shotTransform['translate'][0][0], shotTransform['translate'][0][1], shotTransform['translate'][0][2])
+                        mc.setAttr('%s.rotate' % loc, shotTransform['rotate'][0][0], shotTransform['rotate'][0][1], shotTransform['rotate'][0][2])
+                        mc.setAttr('%s.scale' % loc, shotTransform['scale'][0][0], shotTransform['scale'][0][1], shotTransform['scale'][0][2])
+                        success = True
+                        logger.info('move %s success' % loc)
+
+            if not success: 
+                failed.append(loc)
+
+
+        if failed: 
+            logger.info('Failed to apply %s locs' % (len(failed)))
+
+            for each in failed: 
+                logger.info(each)
+
+    def getTransform(self, data): 
+        transform = eval(data)
+
+        if transform.get('translate', False) and transform.get('rotate', False) and transform.get('scale', False): 
+            return transform
+
+
+
+
+
+
+
+
 
 
 def deleteUI(ui) : 

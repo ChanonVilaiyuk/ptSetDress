@@ -17,11 +17,12 @@ import maya.OpenMayaUI as mui
 import maya.cmds as mc
 import maya.mel as mm
 
-from tool.utils import entityInfo
+from tool.utils import entityInfo, fileUtils
 reload(entityInfo)
 
-from tool.setDress.utils import sd_utils
+from tool.setDress.utils import sd_utils, asmShotExport
 reload(sd_utils)
+reload(asmShotExport)
 
 moduleFile = sys.modules[__name__].__file__
 moduleDir = os.path.dirname(moduleFile)
@@ -77,7 +78,7 @@ class MyForm(QtGui.QMainWindow):
         self.setUI()
 
     def initSignals(self) : 
-        # listWidget
+        # tableWidget
         self.ui.set_tableWidget.itemSelectionChanged.connect(self.listSetInfo)
 
         # radioButton
@@ -99,10 +100,13 @@ class MyForm(QtGui.QMainWindow):
         self.ui.removeSet_pushButton.clicked.connect(self.removeSet)
         self.ui.merge_pushButton.clicked.connect(self.merge)
         self.ui.setOptimize_pushButton.clicked.connect(self.runOptimizer)
+        self.ui.animLoc_pushButton.clicked.connect(self.exportAnimLoc)
 
     def setUI(self) : 
         shot = entityInfo.info()
+        animLatestFile = os.path.basename(self.getAnimLatestFile())
         self.ui.info_label.setText(str(shot.fileName()))
+        self.ui.anim_label.setText(animLatestFile)
 
         self.setTable()
         self.listSet()
@@ -138,10 +142,12 @@ class MyForm(QtGui.QMainWindow):
 
         if data : 
             setName = data[self.setCols.index('Asset Name')]
+            root = data[self.setCols.index('Root')]
 
             self.setAsmLocator(setName)
             self.setAsmRoot(mode='asset')
             self.setAsmRoot(mode='shot')
+            self.setAsmVersion(root)
 
             self.viewData()
 
@@ -202,6 +208,28 @@ class MyForm(QtGui.QMainWindow):
             statusColor = self.darkRed
             self.setLineEdit(lineEdit, '', statusColor)
 
+    def setAsmVersion(self, root): 
+        attr = '%s.version' % root
+        version = 'N/A'
+        
+        if mc.objExists(attr): 
+            data = mc.getAttr(attr)
+            if data: 
+                asset = entityInfo.info(data)
+                currentVersion = asset.getFileVersion(padding=True)
+
+                if currentVersion: 
+                    workPath = ('/').join([a for a in os.path.dirname(data).split('/') if not a == 'publish'])
+                    workScene = '%s/scenes/%s' % (workPath, os.path.basename(data))
+                    asset = entityInfo.info(workScene)
+                    fileVersion = asset.getFileVersion()
+                    publishVersion = asset.getPublishVersion()-1
+
+                    if not fileVersion == publishVersion: 
+                        self.ui.version_label.setText('v%03d latest v%03d - Not matched.' % (fileVersion, publishVersion))
+
+                    else: 
+                        self.ui.version_label.setText('v%03d - Up to date.' % fileVersion)
 
     def viewData(self) : 
         if self.ui.compare_radioButton.isChecked() : 
@@ -295,7 +323,13 @@ class MyForm(QtGui.QMainWindow):
                     else : 
                         self.addListWidgetItem(item)
 
+    def getAnimLatestFile(self): 
+        shot = entityInfo.info()
+        animPath = '%s/scenes/work' % shot.getPath(dept='anim')
+        workFiles = fileUtils.listFile(animPath)
 
+        if workFiles: 
+            return '%s/%s' % (animPath, workFiles[-1])
     
 
     # button action =======================================================
@@ -434,6 +468,12 @@ class MyForm(QtGui.QMainWindow):
         reload(app)
 
         app = app.MyForm(app.getMayaWindow())
+
+    def exportAnimLoc(self): 
+        animShot = self.getAnimLatestFile()
+        if animShot: 
+            asmShotExport.run(animShot)
+            QtGui.QMessageBox.question(self, 'Warning', 'Process Finish')
 
     def getStatusColor(self, status) : 
         if status : 

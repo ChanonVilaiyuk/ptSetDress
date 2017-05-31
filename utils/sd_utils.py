@@ -8,18 +8,18 @@ import logging
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.DEBUG)
 # create file handler which logs even debug messages
-fh = logging.FileHandler('O:/studioTools/logs/asm/asm2.log' )
-fh.setLevel(logging.DEBUG)
+# fh = logging.FileHandler('O:/studioTools/logs/asm/asm2.log' )
+# fh.setLevel(logging.DEBUG)
 # create console handler with a higher log level
-ch = logging.StreamHandler()
-ch.setLevel(logging.ERROR)
+# ch = logging.StreamHandler()
+# ch.setLevel(logging.ERROR)
 # create formatter and add it to the handlers
 formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
-fh.setFormatter(formatter)
-ch.setFormatter(formatter)
+# fh.setFormatter(formatter)
+# ch.setFormatter(formatter)
 # add the handlers to the logger
-logger.addHandler(fh)
-logger.addHandler(ch)
+# logger.addHandler(fh)
+# logger.addHandler(ch)
 
 
 from alembic import Abc
@@ -46,11 +46,11 @@ tmpConstraint = []
 grpSet = 'set'
 removeName = ['_NS', '_AD', '_AR']
 
-def exportAsmLocator(outputPath, bake=False) : 
+def exportAsmLocator(outputPath, bake=False, version='') : 
     # root = createAsmLocator(bake)[0]
     asmLocator = asm.AsmLocator()
     root = asmLocator.create()[0]
-
+    setLocData(root, locType='assetTransform', version=version)
     logger.info('--------- Exporting to Alembic ---------------')
     currentTime = mc.currentTime(q = True)
     start = currentTime
@@ -67,17 +67,19 @@ def exportShotAsmLocator(bake=False) :
     try : 
         # roots = createAsmLocator(bake)
         asmLocator = asm.AsmLocator()
-        roots = asmLocator.create(bake)
+        roots = asmLocator.create()
+        asmRoots = asm.findAssemblyRoot()
+        rootVersions = findAsmVersion(asmRoots)
         shot = entityInfo.info()
         exportFiles = []
         heroLocs = []
 
         if roots : 
-
             for i, root in enumerate(roots) : 
                 refPath = mc.getAttr('%s.reference' % root)
                 asset = entityInfo.info(refPath)
                 assetName = asset.name()
+                setLocData(root, locType='shotTransform', version=rootVersions[i])
 
                 path = shot.animOutput('assemblies', True)
                 hero = shot.animOutput('assemblies', True, False)
@@ -342,6 +344,15 @@ def findAssemblyRoot() :
     return setNodes
 
 
+def findAsmVersion(asmRoots): 
+    arVersions = []
+    for asmRoot in asmRoots: 
+        if 'AR' in asm_utils.listRepIndex(asmRoot): 
+            index = asm_utils.listRepIndex(asmRoot).index('AR')
+            arVersion = mc.getAttr('%s.representations[%s].repData' % (asmRoot, index))
+            arVersions.append(arVersion)
+
+    return arVersions
 
 def importAssetAsmLocator(asset=None):
     
@@ -604,7 +615,8 @@ def compareAbc(abcLoc1, abcLoc2) :
     return (add, remove)
 
 def getLocator(rootLoc, all=False) : 
-    rootLocs = mc.listRelatives(rootLoc, ad=True, type='transform')
+    # fix to long name, see if any problem arise.
+    rootLocs = mc.listRelatives(rootLoc, ad=True, type='transform', f=True)
     rootLocs = [a for a in rootLocs if not mc.referenceQuery(a, isNodeReferenced = True)]
     validLocs = []
 
@@ -734,10 +746,17 @@ def getAllShotSetRootLoc() :
 
 def getShotSetRootLoc(assetName) : 
     rootLocs = getAllShotSetRootLoc()
+    found = False 
 
     if rootLocs : 
         for rootLoc in rootLocs : 
-            if assetName in rootLoc : 
+            if '%s_loc' % assetName == rootLoc : 
+                found = True 
+                return rootLoc
+
+    if not found:
+        for rootLoc in rootLocs: 
+            if assetName in rootLoc: 
                 return rootLoc
 
 def getShotAsmVersion(assetName) : 
@@ -763,6 +782,7 @@ def getShotAssetAsmLocator(assetName) :
 
 def getRef(refPath, level='vProxy', lod='md'): 
     asset = entityInfo.info(refPath)
+    print asset.getRefNaming(level, lod=lod)
     return '%s/%s' % (asset.getPath('ref'), asset.getRefNaming(level, lod=lod))
 
 def connectEmptyLocator(rootLoc):
@@ -892,11 +912,12 @@ def publishAR(source) :
     else : 
         logger.warning('%s not exists. Publihsing stop.' % source)
 
-def publishAD() : 
+def publishAD(arFile='') : 
     """ publish ad file from dress work """
     logger.info('Publishing AD file ...')
     asset = entityInfo.info()
-    arFile = '%s/%s' % (asset.getPath('ref'), asset.getRefNaming('ar'))
+    if not arFile: 
+        arFile = '%s/%s' % (asset.getPath('ref'), asset.getRefNaming('ar'))
     adFile = '%s/%s' % (asset.getPath('ref'), asset.getRefNaming('ad'))
     adName = '%s_ad' % (asset.name())
 
@@ -1082,3 +1103,25 @@ def checkConfirm(geoGrp):
 
     if stepConfirm: 
         return True 
+
+def setLocData(root, locType=None, version=''): 
+    """ set version and transform data """ 
+    childs = getLocator(root, all=True) 
+    childs.append(root)
+    mc.addAttr(root, ln='version', dt='string')
+    mc.setAttr('%s.%s' % (root, 'version'), e = True, keyable = False)
+    mc.setAttr('%s.%s' % (root, 'version'), version, type='string')
+    attr = '%s.%s' % (root, locType)
+
+    for child in childs: 
+        translate = mc.getAttr('%s.translate' % child)
+        rotate = mc.getAttr('%s.rotate' % child)
+        scale = mc.getAttr('%s.scale' % child)
+        data = {'translate': translate, 'rotate': rotate, 'scale': scale}
+        childAttr = '%s.%s' % (child, locType)
+
+        if not mc.objExists(childAttr): 
+            mc.addAttr(child, ln=locType, dt='string')
+            mc.setAttr('%s.%s' % (child, locType), e=True, keyable=False)
+
+        mc.setAttr('%s.%s' % (child, locType), str(data), type='string')

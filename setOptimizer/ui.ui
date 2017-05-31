@@ -7,7 +7,7 @@
     <x>0</x>
     <y>0</y>
     <width>259</width>
-    <height>761</height>
+    <height>914</height>
    </rect>
   </property>
   <property name="windowTitle">
@@ -117,6 +117,26 @@
          </property>
         </widget>
        </item>
+       <item>
+        <widget class="Line" name="line_3">
+         <property name="orientation">
+          <enum>Qt::Horizontal</enum>
+         </property>
+        </widget>
+       </item>
+       <item>
+        <widget class="QPushButton" name="selectUnmatchTransform_pushButton">
+         <property name="minimumSize">
+          <size>
+           <width>0</width>
+           <height>30</height>
+          </size>
+         </property>
+         <property name="text">
+          <string>Select Unmatch Transform</string>
+         </property>
+        </widget>
+       </item>
       </layout>
      </widget>
     </item>
@@ -145,6 +165,24 @@
        </item>
        <item>
         <widget class="QComboBox" name="level_comboBox"/>
+       </item>
+       <item>
+        <layout class="QHBoxLayout" name="horizontalLayout_4" stretch="2,2">
+         <item>
+          <widget class="QCheckBox" name="custom_checkBox">
+           <property name="text">
+            <string>Custom</string>
+           </property>
+          </widget>
+         </item>
+         <item>
+          <widget class="QLineEdit" name="custom_lineEdit">
+           <property name="text">
+            <string/>
+           </property>
+          </widget>
+         </item>
+        </layout>
        </item>
        <item>
         <layout class="QHBoxLayout" name="horizontalLayout_3">
@@ -281,6 +319,32 @@
         <widget class="QLabel" name="label_5">
          <property name="text">
           <string>Tool</string>
+         </property>
+        </widget>
+       </item>
+       <item>
+        <widget class="QPushButton" name="applyAssetTransform_pushButton">
+         <property name="minimumSize">
+          <size>
+           <width>0</width>
+           <height>30</height>
+          </size>
+         </property>
+         <property name="text">
+          <string>Apply Asset Transform</string>
+         </property>
+        </widget>
+       </item>
+       <item>
+        <widget class="QPushButton" name="applyShotTransform_pushButton">
+         <property name="minimumSize">
+          <size>
+           <width>0</width>
+           <height>30</height>
+          </size>
+         </property>
+         <property name="text">
+          <string>Apply Shot Transform</string>
          </property>
         </widget>
        </item>

@@ -12,6 +12,7 @@ import yaml
 import maya.cmds as mc 
 
 from tool.sceneAssembly import asm_utils
+reload(asm_utils)
 
 
 def export(root, path): 
@@ -23,6 +24,7 @@ def export(root, path):
     if mc.objExists(root): 
         rootLongName = mc.ls(root, l=True)[0]
         rootShortName = mc.ls(root)[0]
+        replaceRoot = rootLongName.replace(rootShortName, '')
         childs = [rootLongName]
 
         # list through hierarchy
@@ -31,7 +33,7 @@ def export(root, path):
         for child in childs:
             # filter node 
             if node_filter(child): 
-                name = child.replace('%s|' % rootLongName, '')
+                name = child.replace('%s' % replaceRoot, '')
                 nodeType = mc.objectType(child)
                 parent = mc.listRelatives(child, p=True, f=True)
                 shortName = mc.ls(child)[0]
@@ -41,25 +43,19 @@ def export(root, path):
                 position = mc.xform(child, q=True, ws=True, m=True)
                 
                 if shape: 
-                    shape = shape[0].replace('%s|' % rootLongName, '')
+                    shape = shape[0].replace('%s' % replaceRoot, '')
                 if parent: 
-                    parent = parent[0].replace('%s|' % rootLongName, '')
-                    if not parent: 
-                        parent = rootShortName
+                    parent = parent[0].replace('%s' % replaceRoot, '')
 
-                # if this is root 
-                if rootLongName == child: 
-                    removeParent = child.replace(shortName, '')
-                    name = child.replace(removeParent, '')
-                    parent = None
-                    if shape: 
-                        shape = shape[0]
+                    # this is root 
+                    if '%s|' % parent == replaceRoot: 
+                        parent = None
 
-                asset = get_asset(child, nodeType)
+                asset, namespace = get_asset(child, nodeType)
 
                 data.update({str(name): {'shortName': str(shortName), 'nodeType': str(nodeType), 
                                     'parent': str(parent), 'shape': str(shape), 'topRootLong': str(topRootLong), 
-                                    'topRoot': str(root), 'position': position, 'asset': str(asset)}})
+                                    'topRoot': str(root), 'position': position, 'asset': str(asset), 'namespace': namespace}})
 
         if data: 
             if not os.path.exists(os.path.dirname(path)): 
@@ -90,11 +86,12 @@ def node_filter(node):
 def get_asset(nodeName, nodeType): 
     """ get asset depend on node """ 
     path = None 
-
+    namespace = None 
     if nodeType == 'assemblyReference': 
         path = mc.getAttr('%s.definition' % nodeName)
+        namespace = asm_utils.getARNamespace(nodeName)
 
-    return path 
+    return path, namespace
 
 def create(path, root=None): 
     """ create asset from data """ 
@@ -106,39 +103,73 @@ def create(path, root=None):
 
 def create_node(nodeKey, nodeData): 
     """ create node from given data """ 
-    shortName = nodeData.get('shortName')
-    nodeType = nodeData.get('nodeType')
-    parent = nodeData.get('parent')
-    shape = nodeData.get('shape')
-    topRootLong = nodeData.get('topRootLong')
-    topRoot = nodeData.get('topRoot')
-    position = nodeData.get('position')
-    asset = nodeData.get('asset')
+    print 'nodeKey', nodeKey
+    shortName = nodeData.get(nodeKey).get('shortName')
+    nodeType = nodeData.get(nodeKey).get('nodeType')
+    parent = nodeData.get(nodeKey).get('parent')
+    shape = nodeData.get(nodeKey).get('shape')
+    topRootLong = nodeData.get(nodeKey).get('topRootLong')
+    topRoot = nodeData.get(nodeKey).get('topRoot')
+    position = nodeData.get(nodeKey).get('position')
+    asset = nodeData.get(nodeKey).get('asset')
+    namespace = nodeData.get(nodeKey).get('namespace')
 
     nodeName = None
+    logger.debug('key %s' % nodeKey)
 
     # this is group 
-    if nodeType == 'transform': 
-        if not shape: 
-            nodeName = mc.group(em=True, n=shortName)
+    if not mc.objExists(nodeKey): 
+        logger.info('%s not exists, create node' % nodeName)
+        if nodeType == 'transform': 
+            if shape == 'None': 
+                nodeName = mc.group(em=True, n=shortName)
+                logger.info('create group %s' % nodeName)
 
 
-    # this is assemblyReference 
-    if nodeType == 'assemblyReference': 
-        nodeName = asm_utils.createARNode()
-        asm_utils.setARDefinitionPath(nodeName, asset)
-        lists = asm_utils.listRepIndex(nodeName, listType ='name')
+        # this is assemblyReference 
+        if nodeType == 'assemblyReference': 
+            nodeName = asm_utils.createARNode()
+            asm_utils.setARDefinitionPath(nodeName, asset)
+            asm_utils.setARNamespace(nodeName, namespace)
+            lists = asm_utils.listRepIndex(nodeName, listType ='name')
+            nodeName = mc.rename(nodeName, shortName)
 
-        if lists: 
-            name = 'Grp'
-            if name in lists: 
-                asm_utils.setActiveRep(nodeName, name)
+            if lists: 
+                name = 'Gpu'
+                if name in lists: 
+                    asm_utils.setActiveRep(nodeName, name)
+                    logger.info('set active rep %s' % name)
+                
+                else: 
+                    logger.error('Failed to set active rep. %s is not in active rep' % name)
+
+            logger.info('create assemblyReference %s' % nodeName)
+
+    else: 
+        logger.warning('%s already exists, skip' % nodeName)
+        nodeName = nodeKey
 
     if nodeName: 
         # set xform 
         mc.xform(nodeName, ws=True, m=position)
+        logger.info('set xform')
 
         # set parent 
+        if not mc.objExists(parent): 
+            if not parent == 'None': 
+                parent = create_node(parent, nodeData)
+            
+        if not parent == 'None': 
+            currentParent = mc.listRelatives(nodeName, p=True)
+            if currentParent: 
+                if not currentParent[0] == parent.split('|')[-1]: 
+                    mc.parent(nodeName, parent)
+            else: 
+                mc.parent(nodeName, parent)
+
+        logger.info('finish creation process')
+
+        return nodeName
 
 
 def ymlDumper(filePath, dictData) : 
@@ -166,3 +197,5 @@ def readFile(file) :
     data = f.read()
     f.close()
     return data
+
+    

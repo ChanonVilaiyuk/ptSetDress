@@ -3,6 +3,8 @@
 
 import sys
 import os 
+from collections import OrderedDict
+import yaml
 import logging 
 logger = logging.getLogger(__name__)
 logger.addHandler(logging.NullHandler())
@@ -19,7 +21,7 @@ def export(root, path):
     """ export transform data to file 
     root is top Grp
     path is export path """ 
-    data = dict()
+    data = OrderedDict()
 
     if mc.objExists(root): 
         rootLongName = mc.ls(root, l=True)[0]
@@ -53,9 +55,22 @@ def export(root, path):
 
                 asset, namespace = get_asset(child, nodeType)
 
-                data.update({str(name): {'shortName': str(shortName), 'nodeType': str(nodeType), 
-                                    'parent': str(parent), 'shape': str(shape), 'topRootLong': str(topRootLong), 
-                                    'topRoot': str(root), 'position': position, 'asset': str(asset), 'namespace': namespace}})
+                valueDict = OrderedDict()
+
+                # data.update({str(name): {'shortName': str(shortName), 'nodeType': str(nodeType), 
+                #                     'parent': str(parent), 'shape': str(shape), 'topRootLong': str(topRootLong), 
+                #                     'topRoot': str(root), 'position': position, 'asset': str(asset), 'namespace': namespace}})
+
+                valueDict['shortName'] = str(shortName)
+                valueDict['nodeType'] = str(nodeType)
+                valueDict['parent'] = str(parent)
+                valueDict['shape'] = str(shape)
+                valueDict['topRootLong'] = str(topRootLong)
+                valueDict['topRoot'] = str(topRoot)
+                valueDict['position'] = position
+                valueDict['asset'] = str(asset)
+                valueDict['namespace'] = str(namespace)
+                data[str(name)] = valueDict
 
         if data: 
             if not os.path.exists(os.path.dirname(path)): 
@@ -103,7 +118,6 @@ def create(path, root=None):
 
 def create_node(nodeKey, nodeData): 
     """ create node from given data """ 
-    print 'nodeKey', nodeKey
     shortName = nodeData.get(nodeKey).get('shortName')
     nodeType = nodeData.get(nodeKey).get('nodeType')
     parent = nodeData.get(nodeKey).get('parent')
@@ -114,12 +128,13 @@ def create_node(nodeKey, nodeData):
     asset = nodeData.get(nodeKey).get('asset')
     namespace = nodeData.get(nodeKey).get('namespace')
 
+
     nodeName = None
     logger.debug('key %s' % nodeKey)
 
     # this is group 
     if not mc.objExists(nodeKey): 
-        logger.info('%s not exists, create node' % nodeName)
+        logger.info('%s not exists, create node' % nodeKey)
         if nodeType == 'transform': 
             if shape == 'None': 
                 nodeName = mc.group(em=True, n=shortName)
@@ -173,15 +188,17 @@ def create_node(nodeKey, nodeData):
 
 
 def ymlDumper(filePath, dictData) : 
-    data = yaml.dump(dictData, default_flow_style=False)
+    data = ordered_dump(dictData, Dumper=yaml.SafeDumper)
+    # data = yaml.dump(dictData, default_flow_style=False)
     result = writeFile(filePath, data)
     logger.info('Write yml file success %s' % filePath)
     return result
 
 
 def ymlLoader(filePath) : 
-    data = readFile(filePath)
-    dictData = yaml.load(data)
+    stream = readFile(filePath)
+    dictData = ordered_load(stream, yaml.SafeLoader)
+    # dictData = yaml.load(data)
     return dictData
 
 
@@ -198,4 +215,31 @@ def readFile(file) :
     f.close()
     return data
 
-    
+
+def ordered_load(stream, Loader=yaml.Loader, object_pairs_hook=OrderedDict):
+    class OrderedLoader(Loader):
+        pass
+    def construct_mapping(loader, node):
+        loader.flatten_mapping(node)
+        return object_pairs_hook(loader.construct_pairs(node))
+    OrderedLoader.add_constructor(
+        yaml.resolver.BaseResolver.DEFAULT_MAPPING_TAG,
+        construct_mapping)
+    return yaml.load(stream, OrderedLoader)
+
+
+
+def ordered_dump(data, stream=None, Dumper=yaml.Dumper, **kwds):
+    class OrderedDumper(Dumper):
+        pass
+    def _dict_representer(dumper, data):
+        return dumper.represent_mapping(
+            yaml.resolver.BaseResolver.DEFAULT_MAPPING_TAG,
+            data.items())
+    OrderedDumper.add_representer(OrderedDict, _dict_representer)
+    return yaml.dump(data, stream, OrderedDumper, **kwds)
+
+# usage example:
+# ordered_load(stream, yaml.SafeLoader)
+# usage:
+# ordered_dump(data, Dumper=yaml.SafeDumper)

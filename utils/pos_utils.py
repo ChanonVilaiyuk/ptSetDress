@@ -161,10 +161,6 @@ def create(path, root=None, sync=True, position=True, output='asm', refType='rsP
         remove_assets(removeList, output)
         remove_assets(addList, output)
 
-        print removeList
-        print sceneList
-        print dataList
-
     # create process only 
     for key, value in data.iteritems(): 
         isRoot = value.get('root')
@@ -292,10 +288,12 @@ def create_assembly(assetPath, shortName, namespace):
 
 def create_loc(assetPath, nodeKey, shortName, namespace): 
     """ create Loc node """ 
-    nodeName = '%s' % nodeKey
-    loc = mc.spaceLocator(n=nodeName)[0]
+    nodeName = '%s' % shortName
+    # make this long name 
+    loc = '|%s' % mc.spaceLocator(n=nodeName)[0]
+    
     sd_utils.addLocAttr(loc, assetPath, parent=False)
-    return nodeName
+    return loc
 
 
 
@@ -322,7 +320,7 @@ def list_hierarchy(root, listType):
             for child in childs: 
                 if mc.objectType(child, isType='transform'): 
                     if not mc.referenceQuery(child, isNodeReferenced=True): 
-                        shape = mc.listRelatives(child, s=True)
+                        shape = mc.listRelatives(child, s=True, f=True)
                         name = remove_root(child, replaceRoot)
                         # this is locator 
                         if shape: 

@@ -1,5 +1,9 @@
+# Written by TA
+# ta@picturethisanimation.com
 # this module read transform of the assets and write into a json data. 
 # from json data, create/update asset position according to transform store in data file. 
+# modify at your own risk. 
+
 
 import sys
 import os 
@@ -14,6 +18,7 @@ import yaml
 import maya.cmds as mc 
 
 from tool.sceneAssembly import asm_utils
+from tool.setDress.utils import sd_utils
 reload(asm_utils)
 
 
@@ -22,6 +27,7 @@ def export(root, path):
     root is top Grp
     path is export path """ 
     data = OrderedDict()
+    currentSels = mc.ls(sl=True)
 
     if mc.objExists(root): 
         rootLongName = mc.ls(root, l=True)[0]
@@ -29,13 +35,18 @@ def export(root, path):
         replaceRoot = rootLongName.replace(rootShortName, '')
         childs = [rootLongName]
 
+
         # list through hierarchy
-        childs += mc.listRelatives(root, ad=True, f=True)
+        mc.select(root, hi=True)
+        childs += mc.ls(sl=True, l=True)
+        # childs += mc.listRelatives(root, ad=True, f=True)
         
         for child in childs:
             # filter node 
+            isRoot = False
             if node_filter(child): 
-                name = child.replace('%s' % replaceRoot, '')
+                # name = child.replace('%s' % replaceRoot, '')
+                name = remove_root(child, replaceRoot)
                 nodeType = mc.objectType(child)
                 parent = mc.listRelatives(child, p=True, f=True)
                 shortName = mc.ls(child)[0]
@@ -45,13 +56,24 @@ def export(root, path):
                 position = mc.xform(child, q=True, ws=True, m=True)
                 
                 if shape: 
-                    shape = shape[0].replace('%s' % replaceRoot, '')
+                    # shape = shape[0].replace('%s' % replaceRoot, '')
+                    shape = remove_root(shape[0], replaceRoot)
+
                 if parent: 
-                    parent = parent[0].replace('%s' % replaceRoot, '')
+                    # parent = parent[0].replace('%s' % replaceRoot, '')
+                    parent = remove_root(parent[0], replaceRoot)
+                    print 'replaceRoot', replaceRoot, 'name', name, 'root', root
 
                     # this is root 
-                    if '%s|' % parent == replaceRoot: 
+                    # if '%s|' % parent == replaceRoot: 
+                    if root == name: 
                         parent = None
+                        isRoot = True
+
+                else: 
+                    print '==', name
+                    parent = None 
+                    isRoot = True
 
                 asset, namespace = get_asset(child, nodeType)
 
@@ -70,6 +92,7 @@ def export(root, path):
                 valueDict['position'] = position
                 valueDict['asset'] = str(asset)
                 valueDict['namespace'] = str(namespace)
+                valueDict['root'] = isRoot
                 data[str(name)] = valueDict
 
         if data: 
@@ -81,10 +104,12 @@ def export(root, path):
     else: 
         logger.warning('"%s" does not exists' % root)
 
+    mc.select(currentSels)
+
 
 def node_filter(node): 
     """ filter node """ 
-    nodeFilter = ['transform', 'assemblyReference']
+    nodeFilter = ['transform', 'assemblyReference', 'locator']
 
     if mc.objectType(node) in nodeFilter: 
         shape = mc.listRelatives(node, s=True)
@@ -108,15 +133,56 @@ def get_asset(nodeName, nodeType):
 
     return path, namespace
 
-def create(path, root=None): 
+def create(path, root=None, sync=True, position=True, output='asm', refType='rsProxy'): 
     """ create asset from data """ 
     data = ymlLoader(path)
 
+    if root: 
+        data = change_root(root, data)
+
+    # remove here 
+    if sync: 
+        targetRoot = root 
+        if not root: 
+            targetRoot = find_root(data)
+
+        sceneList = list_hierarchy(targetRoot, listType=output)
+        dataList = data.keys()
+        addList, removeList = compare_list(sceneList, dataList)
+        remove_assets(removeList)
+
+    # create process only 
     for key, value in data.iteritems(): 
-        create_node(key, data)
+        isRoot = value.get('root')
+        node = create_node(key, data, position=position, output=output, refType=refType)
+
+        if isRoot: 
+            attr = 'reference'
+            nodeAttr = '%s.%s' % (node, attr)
+
+            if not mc.objExists(nodeAttr): 
+                mc.addAttr(node, ln=attr, dt='string')
+                mc.setAttr(nodeAttr, e=True, keyable=True)
+            mc.setAttr(nodeAttr, path, type='string')
+            logger.info('attr %s set' % path)
 
 
-def create_node(nodeKey, nodeData): 
+def update(root, path=None, sync=True): 
+    attr = 'reference'
+    nodeAttr = '%s.%s' % (root, attr)
+
+    if mc.objExists(nodeAttr): 
+        if path: 
+            mc.setAttr('%s.%s' % (root, attr), path, type='string')
+
+        path = mc.getAttr(nodeAttr)
+        create(path, sync=sync)
+
+    else: 
+        logger.error('Attr %s not found' % nodeAttr)
+
+
+def create_node(nodeKey, nodeData, position=True, output='asm', refType='rsProxy'): 
     """ create node from given data """ 
     shortName = nodeData.get(nodeKey).get('shortName')
     nodeType = nodeData.get(nodeKey).get('nodeType')
@@ -143,20 +209,14 @@ def create_node(nodeKey, nodeData):
 
         # this is assemblyReference 
         if nodeType == 'assemblyReference': 
-            nodeName = asm_utils.createARNode()
-            asm_utils.setARDefinitionPath(nodeName, asset)
-            asm_utils.setARNamespace(nodeName, namespace)
-            lists = asm_utils.listRepIndex(nodeName, listType ='name')
-            nodeName = mc.rename(nodeName, shortName)
-
-            if lists: 
-                name = 'Gpu'
-                if name in lists: 
-                    asm_utils.setActiveRep(nodeName, name)
-                    logger.info('set active rep %s' % name)
-                
-                else: 
-                    logger.error('Failed to set active rep. %s is not in active rep' % name)
+            
+            # print 'nodeName after rename', nodeName
+            if output == 'asm': 
+                nodeName = create_assembly(asset, shortName, namespace)
+            if output == 'loc': 
+                nodeName = create_loc(asset, shortName, namespace)
+                # continue to build 
+                sd_utils.build(locs=[nodeName], level=refType, lod='md', forceReplace=False, returnValue='normal', instance=False)
 
             logger.info('create assemblyReference %s' % nodeName)
 
@@ -166,13 +226,14 @@ def create_node(nodeKey, nodeData):
 
     if nodeName: 
         # set xform 
-        mc.xform(nodeName, ws=True, m=position)
-        logger.info('set xform')
+        if position: 
+            mc.xform(nodeName, ws=True, m=position)
+            logger.info('set xform')
 
         # set parent 
         if not mc.objExists(parent): 
             if not parent == 'None': 
-                parent = create_node(parent, nodeData)
+                parent = create_node(parent, nodeData, position=position, output=output, refType=refType)
             
         if not parent == 'None': 
             currentParent = mc.listRelatives(nodeName, p=True)
@@ -180,11 +241,168 @@ def create_node(nodeKey, nodeData):
                 if not currentParent[0] == parent.split('|')[-1]: 
                     mc.parent(nodeName, parent)
             else: 
-                mc.parent(nodeName, parent)
+                # after parent, nodeName will change its longname. Assigned new long name after parent
+                nodeName = mc.parent(nodeName, parent)
 
-        logger.info('finish creation process')
+        logger.info('Finish creation process')
 
         return nodeName
+
+
+def create_assembly(assetPath, shortName, namespace): 
+    """ create AR node """ 
+    nodeName = asm_utils.createARNode()
+    asm_utils.setARDefinitionPath(nodeName, assetPath)
+    asm_utils.setARNamespace(nodeName, namespace)
+    lists = asm_utils.listRepIndex(nodeName, listType ='name')
+    nodeName = mc.rename(nodeName, shortName)
+
+    if lists: 
+        name = 'Gpu'
+        if name in lists: 
+            asm_utils.setActiveRep(nodeName, name)
+            logger.info('set active rep %s' % name)
+        
+        else: 
+            logger.error('Failed to set active rep. %s is not in active rep' % name)
+
+    return nodeName
+
+
+def create_loc(assetPath, shortName, namespace): 
+    """ create Loc node """ 
+    nodeName = '%s' % shortName
+    loc = mc.spaceLocator(n=nodeName)[0]
+    sd_utils.addLocAttr(loc, assetPath, parent=False)
+    return nodeName
+
+
+
+def list_hierarchy(root, listType): 
+    """ list hierarchy relative long name """ 
+    assetList = []
+    currentSels = mc.ls(sl=True)
+
+    if mc.objExists(root): 
+        rootLongName = mc.ls(root, l=True)[0]
+        rootShortName = mc.ls(root)[0]
+        replaceRoot = rootLongName.replace(rootShortName, '')
+
+        mc.select(root, hi=True)
+        childs = mc.ls(sl=True, l=True)
+
+        if listType == 'asm': 
+            for child in childs: 
+                if node_filter(child): 
+                    name = remove_root(child, replaceRoot)
+                    assetList.append(name)
+
+        if listType == 'loc': 
+            for child in childs: 
+                if mc.objectType(child, isType='transform'): 
+                    if not mc.referenceQuery(child, isNodeReferenced=True): 
+                        shape = mc.listRelatives(child, s=True)
+                        name = remove_root(child, replaceRoot)
+                        # this is locator 
+                        if shape: 
+                            if mc.objectType(shape[0], isType='locator'): 
+                                assetList.append(name)
+                        # this is group 
+                        else: 
+                            assetList.append(name)
+                    else: 
+                        break
+
+    mc.select(currentSels)
+
+    return assetList
+
+
+def compare_list(originalList, newList): 
+    """ compare 2 list and return add, remove list """
+    remove = [a for a in originalList if not a in newList]
+    add = [a for a in newList if not a in originalList]
+
+    return add, remove
+
+
+def remove_assets(removeList): 
+    """ remove asset and check if they are references or non-references """ 
+    removeGrp = 'remove_if_found'
+    if not mc.objExists(removeGrp): 
+        mc.group(em=True, n=removeGrp)
+
+    for each in removeList: 
+        try: 
+            mc.parent(each, removeGrp)
+        except Exception as e: 
+            logger.error('Cannot parent %s to %s' % (each, removeGrp))
+            logger.error(e)
+
+    # mc.delete(removeList)
+    if mc.listRelatives(removeGrp, c=True): 
+        sd_utils.removeSet(removeGrp=removeGrp, removeLoc=True)
+
+    if mc.objExists(removeGrp): 
+        mc.delete(removeGrp)
+
+
+def change_root(root, data): 
+    """ change root name on memory """ 
+    oldRoot = find_root(data)
+    newRoot = root
+    newDict = OrderedDict()
+    keyFilters = ['shortName', 'parent', 'shape', 'topRoot']
+
+    for name, infoDict in data.iteritems(): 
+        newName = name 
+        print oldRoot, name
+
+        if oldRoot in name: 
+            newName = name.replace(oldRoot, newRoot)
+
+        newDict[newName] = OrderedDict()
+
+        for key, value in infoDict.iteritems(): 
+            newValue = value 
+            if key in keyFilters: 
+                if oldRoot in value: 
+                    newValue = value.replace(oldRoot, newRoot)
+            newDict[newName][key] = newValue
+
+    return newDict
+
+def find_root(data): 
+    for key, infoDict in data.iteritems(): 
+        root = infoDict.get('root')
+
+        if root: 
+            return key
+
+def remove_root(name, root): 
+    """ remove root from name 
+    |root| |root|group1 -> group1 
+    | |group1 -> group1 """
+
+    # root = '|root|c'
+    # name = '|root|c|a|b|root|c'
+
+    rootList = [a for a in root.split('|') if a]
+    nameList = [a for a in name.split('|') if a]
+    removeIndex = []
+
+    # find remove index
+    for i, v in enumerate(rootList): 
+        if v == nameList[i]: 
+            removeIndex.append(i)
+            
+    # reverse remove 
+    for i in removeIndex[::-1]: 
+        del nameList[i]
+            
+    newName = '|'.join(nameList)
+    return newName
+
 
 
 def ymlDumper(filePath, dictData) : 

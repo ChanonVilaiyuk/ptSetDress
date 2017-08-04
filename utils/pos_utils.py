@@ -4,6 +4,11 @@
 # from json data, create/update asset position according to transform store in data file. 
 # modify at your own risk. 
 
+# v.0.0.1 - support build locator
+
+# dependency need 
+# asm_utils.py / sd_utils.py
+
 
 import sys
 import os 
@@ -12,14 +17,18 @@ import yaml
 import logging 
 logger = logging.getLogger(__name__)
 logger.addHandler(logging.NullHandler())
-logger.setLevel(logging.DEBUG)
+logger.setLevel(logging.INFO)
 
 import yaml
 import maya.cmds as mc 
 
 from tool.sceneAssembly import asm_utils
 from tool.setDress.utils import sd_utils
-reload(asm_utils)
+
+# this should be config
+attrDescription = 'description'
+outputDescription = 'output'
+outputList = ['asm', 'loc']
 
 
 def export(root, path): 
@@ -62,7 +71,6 @@ def export(root, path):
                 if parent: 
                     # parent = parent[0].replace('%s' % replaceRoot, '')
                     parent = remove_root(parent[0], replaceRoot)
-                    print 'replaceRoot', replaceRoot, 'name', name, 'root', root
 
                     # this is root 
                     # if '%s|' % parent == replaceRoot: 
@@ -71,7 +79,6 @@ def export(root, path):
                         isRoot = True
 
                 else: 
-                    print '==', name
                     parent = None 
                     isRoot = True
 
@@ -149,7 +156,14 @@ def create(path, root=None, sync=True, position=True, output='asm', refType='rsP
         sceneList = list_hierarchy(targetRoot, listType=output)
         dataList = data.keys()
         addList, removeList = compare_list(sceneList, dataList)
-        remove_assets(removeList)
+
+        # clean remove or future add asset first 
+        remove_assets(removeList, output)
+        remove_assets(addList, output)
+
+        print removeList
+        print sceneList
+        print dataList
 
     # create process only 
     for key, value in data.iteritems(): 
@@ -157,18 +171,25 @@ def create(path, root=None, sync=True, position=True, output='asm', refType='rsP
         node = create_node(key, data, position=position, output=output, refType=refType)
 
         if isRoot: 
-            attr = 'reference'
+            attr = attrDescription
             nodeAttr = '%s.%s' % (node, attr)
+            outputAttr = '%s.%s' % (node, outputDescription)
 
             if not mc.objExists(nodeAttr): 
                 mc.addAttr(node, ln=attr, dt='string')
                 mc.setAttr(nodeAttr, e=True, keyable=True)
+
+                mc.addAttr(node, ln=outputDescription, at='enum', en='%s:%s:' % (outputList[0], outputList[1]))
+                mc.setAttr(outputAttr, e=True, keyable=True)
+
             mc.setAttr(nodeAttr, path, type='string')
             logger.info('attr %s set' % path)
+            value = [index for index, a in enumerate(outputList) if output==a][0]
+            mc.setAttr(outputAttr, value)
 
 
 def update(root, path=None, sync=True): 
-    attr = 'reference'
+    attr = attrDescription
     nodeAttr = '%s.%s' % (root, attr)
 
     if mc.objExists(nodeAttr): 
@@ -214,7 +235,7 @@ def create_node(nodeKey, nodeData, position=True, output='asm', refType='rsProxy
             if output == 'asm': 
                 nodeName = create_assembly(asset, shortName, namespace)
             if output == 'loc': 
-                nodeName = create_loc(asset, shortName, namespace)
+                nodeName = create_loc(asset, nodeKey, shortName, namespace)
                 # continue to build 
                 sd_utils.build(locs=[nodeName], level=refType, lod='md', forceReplace=False, returnValue='normal', instance=False)
 
@@ -269,9 +290,9 @@ def create_assembly(assetPath, shortName, namespace):
     return nodeName
 
 
-def create_loc(assetPath, shortName, namespace): 
+def create_loc(assetPath, nodeKey, shortName, namespace): 
     """ create Loc node """ 
-    nodeName = '%s' % shortName
+    nodeName = '%s' % nodeKey
     loc = mc.spaceLocator(n=nodeName)[0]
     sd_utils.addLocAttr(loc, assetPath, parent=False)
     return nodeName
@@ -311,7 +332,7 @@ def list_hierarchy(root, listType):
                         else: 
                             assetList.append(name)
                     else: 
-                        break
+                        continue
 
     mc.select(currentSels)
 
@@ -326,7 +347,7 @@ def compare_list(originalList, newList):
     return add, remove
 
 
-def remove_assets(removeList): 
+def remove_assets(removeList, output): 
     """ remove asset and check if they are references or non-references """ 
     removeGrp = 'remove_if_found'
     if not mc.objExists(removeGrp): 
@@ -356,7 +377,6 @@ def change_root(root, data):
 
     for name, infoDict in data.iteritems(): 
         newName = name 
-        print oldRoot, name
 
         if oldRoot in name: 
             newName = name.replace(oldRoot, newRoot)
@@ -403,6 +423,23 @@ def remove_root(name, root):
     newName = '|'.join(nameList)
     return newName
 
+
+def check_update(): 
+    """ check current root for newer version of shotDress definition and update if user agree """ 
+    # find root in the scene 
+    pass 
+
+
+def refresh(node): 
+    """ reapply description to this root """ 
+    attr = '%s.%s' % (node, attrDescription)
+    outputAttr = '%s.%s' % (node, outputDescription)
+
+    if mc.objExists(attr) and mc.objExists(outputAttr): 
+        path = mc.getAttr(attr)
+        output = outputList[mc.getAttr(outputAttr)]
+        create(path, root=node, sync=True, position=True, output=output, refType='rsProxy')
+        logger.info('refresh success')
 
 
 def ymlDumper(filePath, dictData) : 

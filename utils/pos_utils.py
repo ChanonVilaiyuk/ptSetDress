@@ -5,6 +5,7 @@
 # modify at your own risk. 
 
 # v.0.0.1 - support build locator
+# v.0.0.2 - update asm and loc mode 
 
 # dependency need 
 # asm_utils.py / sd_utils.py

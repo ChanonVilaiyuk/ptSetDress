@@ -7,6 +7,7 @@
 # v.0.0.1 - support build locator
 # v.0.0.2 - update asm and loc mode 
 # v.0.0.3 - switchable between asm and loc
+# v.0.0.4 - update function work 
 
 # dependency need 
 # asm_utils.py / sd_utils.py
@@ -187,15 +188,18 @@ def create(path, root=None, sync=True, position=True, output='asm', refType='rsP
 
 
 def update(root, path=None, sync=True): 
+    """ update input root and create from output attr on root """
     attr = attrDescription
     nodeAttr = '%s.%s' % (root, attr)
+    outputAttr = '%s.%s' % (root, outputDescription)
 
-    if mc.objExists(nodeAttr): 
+    if mc.objExists(nodeAttr) and mc.objExists(outputAttr): 
         if path: 
             mc.setAttr('%s.%s' % (root, attr), path, type='string')
 
         path = mc.getAttr(nodeAttr)
-        create(path, sync=sync)
+        output = mc.getAttr(outputAttr, asString=True)
+        create(path, root=root, sync=True, position=True, output=output, refType='rsProxy')
 
     else: 
         logger.error('Attr %s not found' % nodeAttr)
@@ -493,7 +497,13 @@ def ordered_dump(data, stream=None, Dumper=yaml.Dumper, **kwds):
     OrderedDumper.add_representer(OrderedDict, _dict_representer)
     return yaml.dump(data, stream, OrderedDumper, **kwds)
 
-# usage example:
-# ordered_load(stream, yaml.SafeLoader)
-# usage:
-# ordered_dump(data, Dumper=yaml.SafeDumper)
+
+# example
+# export 
+# path = 'C:/Users/Ta/Documents/temp/asset.yml'
+# pos_utils.export(root='shotDress', path=path)
+
+# create 
+# path = 'C:/Users/Ta/Documents/temp/asset.yml'
+# pos_utils.create(path, root='shotDress', sync=True, position=True, output='loc', refType='rsProxy')
+

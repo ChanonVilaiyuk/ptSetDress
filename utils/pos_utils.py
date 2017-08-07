@@ -6,6 +6,7 @@
 
 # v.0.0.1 - support build locator
 # v.0.0.2 - update asm and loc mode 
+# v.0.0.3 - switchable between asm and loc
 
 # dependency need 
 # asm_utils.py / sd_utils.py
@@ -224,10 +225,8 @@ def create_node(nodeKey, nodeData, position=True, output='asm', refType='rsProxy
                 nodeName = mc.group(em=True, n=shortName)
                 logger.info('create group %s' % nodeName)
 
-
         # this is assemblyReference 
         if nodeType == 'assemblyReference': 
-            
             # print 'nodeName after rename', nodeName
             if output == 'asm': 
                 nodeName = create_assembly(asset, shortName, namespace)
@@ -235,6 +234,7 @@ def create_node(nodeKey, nodeData, position=True, output='asm', refType='rsProxy
                 nodeName = create_loc(asset, nodeKey, shortName, namespace)
                 # continue to build 
                 sd_utils.build(locs=[nodeName], level=refType, lod='md', forceReplace=False, returnValue='normal', instance=False)
+                logger.info('build asset to loc')
 
             logger.info('create assemblyReference %s' % nodeName)
 

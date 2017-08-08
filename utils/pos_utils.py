@@ -445,6 +445,58 @@ def refresh(node):
         logger.info('refresh success')
 
 
+def find_roots(): 
+    """ find all pos root in the scene """ 
+    # find only top root with description and output attrs
+    topNodes = [a for a in mc.ls(type='transform') if not mc.listRelatives(a, p=True)]
+    roots = [a for a in topNodes if mc.objExists('%s.%s' % (a, attrDescription)) and mc.objExists('%s.%s' % (a, outputDescription))]
+
+    return roots
+
+
+def check_root_version(root): 
+    """ check if description is the latest file. If not, return new version 
+        return nothing if update, return latest file if not up to date """
+    path = mc.getAttr('%s.%s' % (root, attrDescription))
+    fileDict = dict()
+
+    if os.path.exists(path): 
+        dirname = os.path.dirname(path)
+        # list files 
+        files = [d for d in os.listdir(dirname) if os.path.isfile(os.path.join(dirname, d))]
+
+        for each in files: 
+            filepath = '%s/%s' % (dirname, each)
+            mtime = os.path.getmtime(filepath)
+            fileDict.update({mtime: filepath})
+
+    if fileDict: 
+        sortedFiles = [fileDict[a] for a in sorted(fileDict.keys())]
+        if sortedFiles: 
+            latestFile = sortedFiles[-1]
+
+            if not path == latestFile: 
+                return latestFile
+
+
+def update_ui(): 
+    """ run this code in file manager to check if there are any roots and check for update """ 
+    roots = find_roots()
+
+    if roots: 
+        for root in roots: 
+            updatePath = check_root_version(root)
+            if updatePath: 
+                result = mc.confirmDialog(title='Confirm', message='Update new version of %s?' % root, button=['Update', 'No'])
+
+                if result == 'Update': 
+                    update(root, path=updatePath, sync=True)
+                    logger.info('update %s' % updatePath)
+
+                else: 
+                    logger.info('dismiss update %s' % updatePath)
+
+
 def ymlDumper(filePath, dictData) : 
     data = ordered_dump(dictData, Dumper=yaml.SafeDumper)
     # data = yaml.dump(dictData, default_flow_style=False)

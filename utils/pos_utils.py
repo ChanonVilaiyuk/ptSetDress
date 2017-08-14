@@ -8,6 +8,7 @@
 # v.0.0.2 - update asm and loc mode 
 # v.0.0.3 - switchable between asm and loc
 # v.0.0.4 - update function work 
+# v.0.0.5 - update check version
 
 # dependency need 
 # asm_utils.py / sd_utils.py
@@ -65,45 +66,51 @@ def export(root, path):
                 shape = mc.listRelatives(child, s=True, f=True)
                 topRootLong = rootLongName
                 topRoot = root
-                position = mc.xform(child, q=True, ws=True, m=True)
+                try: 
+                    position = mc.xform(child, q=True, ws=True, m=True)
+                except RuntimeError as e: 
+                    logger.error(e)
+                    position = None 
+
+                if position: 
                 
-                if shape: 
-                    # shape = shape[0].replace('%s' % replaceRoot, '')
-                    shape = remove_root(shape[0], replaceRoot)
+                    if shape: 
+                        # shape = shape[0].replace('%s' % replaceRoot, '')
+                        shape = remove_root(shape[0], replaceRoot)
 
-                if parent: 
-                    # parent = parent[0].replace('%s' % replaceRoot, '')
-                    parent = remove_root(parent[0], replaceRoot)
+                    if parent: 
+                        # parent = parent[0].replace('%s' % replaceRoot, '')
+                        parent = remove_root(parent[0], replaceRoot)
 
-                    # this is root 
-                    # if '%s|' % parent == replaceRoot: 
-                    if root == name: 
-                        parent = None
+                        # this is root 
+                        # if '%s|' % parent == replaceRoot: 
+                        if root == name: 
+                            parent = None
+                            isRoot = True
+
+                    else: 
+                        parent = None 
                         isRoot = True
 
-                else: 
-                    parent = None 
-                    isRoot = True
+                    asset, namespace = get_asset(child, nodeType)
 
-                asset, namespace = get_asset(child, nodeType)
+                    valueDict = OrderedDict()
 
-                valueDict = OrderedDict()
+                    # data.update({str(name): {'shortName': str(shortName), 'nodeType': str(nodeType), 
+                    #                     'parent': str(parent), 'shape': str(shape), 'topRootLong': str(topRootLong), 
+                    #                     'topRoot': str(root), 'position': position, 'asset': str(asset), 'namespace': namespace}})
 
-                # data.update({str(name): {'shortName': str(shortName), 'nodeType': str(nodeType), 
-                #                     'parent': str(parent), 'shape': str(shape), 'topRootLong': str(topRootLong), 
-                #                     'topRoot': str(root), 'position': position, 'asset': str(asset), 'namespace': namespace}})
-
-                valueDict['shortName'] = str(shortName)
-                valueDict['nodeType'] = str(nodeType)
-                valueDict['parent'] = str(parent)
-                valueDict['shape'] = str(shape)
-                valueDict['topRootLong'] = str(topRootLong)
-                valueDict['topRoot'] = str(topRoot)
-                valueDict['position'] = position
-                valueDict['asset'] = str(asset)
-                valueDict['namespace'] = str(namespace)
-                valueDict['root'] = isRoot
-                data[str(name)] = valueDict
+                    valueDict['shortName'] = str(shortName)
+                    valueDict['nodeType'] = str(nodeType)
+                    valueDict['parent'] = str(parent)
+                    valueDict['shape'] = str(shape)
+                    valueDict['topRootLong'] = str(topRootLong)
+                    valueDict['topRoot'] = str(topRoot)
+                    valueDict['position'] = position
+                    valueDict['asset'] = str(asset)
+                    valueDict['namespace'] = str(namespace)
+                    valueDict['root'] = isRoot
+                    data[str(name)] = valueDict
 
         if data: 
             if not os.path.exists(os.path.dirname(path)): 
@@ -478,11 +485,15 @@ def check_root_version(root):
             if not path == latestFile: 
                 return latestFile
 
+def get_root_path(root): 
+    return mc.getAttr('%s.%s' % (root, attrDescription))
+
 
 def update_ui(): 
     """ run this code in file manager to check if there are any roots and check for update """ 
     roots = find_roots()
 
+    # if root, update 
     if roots: 
         for root in roots: 
             updatePath = check_root_version(root)
@@ -495,6 +506,7 @@ def update_ui():
 
                 else: 
                     logger.info('dismiss update %s' % updatePath)
+
 
 
 def ymlDumper(filePath, dictData) : 

@@ -33,6 +33,7 @@ from tool.setDress.utils import sd_utils
 attrDescription = 'description'
 outputDescription = 'output'
 outputList = ['asm', 'loc']
+setGrp = 'set'
 
 
 def export(root, path): 
@@ -66,8 +67,11 @@ def export(root, path):
                 shape = mc.listRelatives(child, s=True, f=True)
                 topRootLong = rootLongName
                 topRoot = root
+
                 try: 
                     position = mc.xform(child, q=True, ws=True, m=True)
+                    vis = mc.getAttr('%s.visibility' % child)
+
                 except RuntimeError as e: 
                     logger.error(e)
                     position = None 
@@ -93,6 +97,7 @@ def export(root, path):
                         isRoot = True
 
                     asset, namespace = get_asset(child, nodeType)
+                    animCurve = check_animCurve(child)
 
                     valueDict = OrderedDict()
 
@@ -107,8 +112,10 @@ def export(root, path):
                     valueDict['topRootLong'] = str(topRootLong)
                     valueDict['topRoot'] = str(topRoot)
                     valueDict['position'] = position
+                    valueDict['hidden'] = not vis
                     valueDict['asset'] = str(asset)
                     valueDict['namespace'] = str(namespace)
+                    valueDict['animCurve'] = animCurve
                     valueDict['root'] = isRoot
                     data[str(name)] = valueDict
 
@@ -139,6 +146,14 @@ def node_filter(node):
                     return False
             return True
         return True
+
+
+def check_animCurve(nodeName): 
+    nodeFilter = ['animCurveTU', 'animCurveTA', 'animCurveTL']
+    nodes = mc.listConnections(nodeName, p=True, d=False, c=True)
+    if nodes: 
+        return any(mc.objectType(a) in nodeFilter for a in nodes)
+    return False
 
 def get_asset(nodeName, nodeType): 
     """ get asset depend on node """ 
@@ -192,6 +207,32 @@ def create(path, root=None, sync=True, position=True, output='asm', refType='rsP
             logger.info('attr %s set' % path)
             value = [index for index, a in enumerate(outputList) if output==a][0]
             mc.setAttr(outputAttr, value)
+
+
+def transfer_xform(path, root, condition='animCurve'): 
+    """ create asset from data 
+    condition='animCurve' -> apply only animCurve = True """ 
+    data = ymlLoader(path)
+
+    if root: 
+        data = change_root(root, data)
+
+    # create process only 
+    for nodeName, value in data.iteritems(): 
+        isRoot = value.get('root')
+        node = update_node(nodeName, data, condition=condition)
+
+        if isRoot: 
+            attr = attrDescription
+            nodeAttr = '%s.%s' % (node, attr)
+
+            if not mc.objExists(nodeAttr): 
+                mc.addAttr(node, ln=attr, dt='string')
+                mc.setAttr(nodeAttr, e=True, keyable=True)
+
+            mc.setAttr(nodeAttr, path, type='string')
+            logger.info('attr %s set' % path)
+
 
 
 def update(root, path=None, sync=True): 
@@ -275,6 +316,44 @@ def create_node(nodeKey, nodeData, position=True, output='asm', refType='rsProxy
 
         logger.info('Finish creation process')
 
+        return nodeName
+
+
+def update_node(nodeName, nodeData, condition=None): 
+    """ update node from given data """ 
+    shortName = nodeData.get(nodeName).get('shortName')
+    nodeType = nodeData.get(nodeName).get('nodeType')
+    parent = nodeData.get(nodeName).get('parent')
+    shape = nodeData.get(nodeName).get('shape')
+    topRootLong = nodeData.get(nodeName).get('topRootLong')
+    topRoot = nodeData.get(nodeName).get('topRoot')
+    position = nodeData.get(nodeName).get('position')
+    hidden = nodeData.get(nodeName).get('hidden')
+    asset = nodeData.get(nodeName).get('asset')
+    namespace = nodeData.get(nodeName).get('namespace')
+    animCurve = nodeData.get(nodeName).get('animCurve')
+    hiddenAttr = '%s.hidden' % nodeName
+
+    update = False
+
+    if nodeName: 
+        if condition == 'animCurve': 
+            if animCurve: 
+                update = True
+        else: 
+            update = True 
+
+        if update: 
+            # set xform 
+            mc.xform(nodeName, ws=True, m=position)
+            logger.info('set xform %s' % nodeName)
+
+            # set vis 
+            mc.setAttr('%s.visibility' % nodeName, not hidden)
+            if mc.objExists(hiddenAttr): 
+                mc.setAttr(hiddenAttr, hidden)
+                logger.info('set hidden %s' % hidden)
+            
         return nodeName
 
 

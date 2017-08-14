@@ -9,6 +9,7 @@
 # v.0.0.3 - switchable between asm and loc
 # v.0.0.4 - update function work 
 # v.0.0.5 - update check version
+# v.0.0.6 - support set override by update xform only
 
 # dependency need 
 # asm_utils.py / sd_utils.py

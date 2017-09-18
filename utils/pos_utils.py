@@ -1,6 +1,6 @@
 # Written by TA
 # ta@picturethisanimation.com
-# this module read transform of the assets and write into a json data. 
+# this module read transform of the assets and write into yml data. 
 # from json data, create/update asset position according to transform store in data file. 
 # modify at your own risk. 
 
@@ -10,6 +10,7 @@
 # v.0.0.4 - update function work 
 # v.0.0.5 - update check version
 # v.0.0.6 - support set override by update xform only
+# v.0.0.7 - refresh xform only with selection options
 
 # dependency need 
 # asm_utils.py / sd_utils.py
@@ -214,6 +215,7 @@ def transfer_xform(path, root, condition='animCurve'):
     """ create asset from data 
     condition='animCurve' -> apply only animCurve = True """ 
     data = ymlLoader(path)
+    nodes = []
 
     if root: 
         data = change_root(root, data)
@@ -221,7 +223,10 @@ def transfer_xform(path, root, condition='animCurve'):
     # create process only 
     for nodeName, value in data.iteritems(): 
         isRoot = value.get('root')
-        node = update_node(nodeName, data, condition=condition)
+        node, update = update_node(nodeName, data, condition=condition)
+        
+        if update: 
+            nodes.append(node)
 
         if isRoot: 
             attr = attrDescription
@@ -233,6 +238,8 @@ def transfer_xform(path, root, condition='animCurve'):
 
             mc.setAttr(nodeAttr, path, type='string')
             logger.info('attr %s set' % path)
+
+    return nodes
 
 
 
@@ -355,7 +362,7 @@ def update_node(nodeName, nodeData, condition=None):
                 mc.setAttr(hiddenAttr, hidden)
                 logger.info('set hidden %s' % hidden)
             
-        return nodeName
+    return nodeName, update
 
 
 def create_assembly(assetPath, shortName, namespace): 
@@ -532,6 +539,21 @@ def refresh(node):
         logger.info('refresh success')
 
 
+def refresh_xform(node, select=False): 
+    """ reapply only keyed xform description to this root """ 
+    attr = '%s.%s' % (node, attrDescription)
+    outputAttr = '%s.%s' % (node, outputDescription)
+
+    if mc.objExists(attr) and mc.objExists(outputAttr): 
+        path = mc.getAttr(attr)
+        output = outputList[mc.getAttr(outputAttr)]
+        nodes = transfer_xform(path, root=node)
+        logger.info('refresh success')
+
+        if select: 
+            mc.select(nodes)
+
+
 def find_roots(): 
     """ find all pos root in the scene """ 
     # find only top root with description and output attrs
@@ -587,6 +609,34 @@ def update_ui():
                 else: 
                     logger.info('dismiss update %s' % updatePath)
 
+
+def copy(): 
+    """ export asm to temp dir """ 
+    tempDir = os.environ.get('TEMP')
+    tempFilename = 'asmClipboard.yml'
+    tempFile = '%s/%s' % (tempDir, tempFilename)
+
+    currentSels = mc.ls(sl=True)
+
+    if currentSels: 
+        root = currentSels[0]
+        export(root, tempFile)
+
+    else: 
+        logger.warning('Nothing is selected')
+
+
+def paste(): 
+    """ create asm from temp dir """ 
+    tempDir = os.environ.get('TEMP')
+    tempFilename = 'asmClipboard.yml'
+    tempFile = '%s/%s' % (tempDir, tempFilename)
+
+    if os.path.exists(tempFile): 
+        create(tempFile)
+
+    else: 
+        logger.warning('Clipboard does not exists %s' % tempFile)
 
 
 def ymlDumper(filePath, dictData) : 
